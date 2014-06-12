@@ -6,15 +6,13 @@ Communicate with Denver Instruments balance
 
 __version__ = "1.4"
 
-import sys, serial, time
+import sys, time
 import logging, logging.handlers
-from collections import deque
 
 from twisted.protocols.basic import LineReceiver
 from twisted.internet import stdio, reactor
 from twisted.internet.serialport import SerialPort
 from twisted.internet.task import LoopingCall
-
 
 comport = "/dev/ttyS0"
 baud = 9600
@@ -37,8 +35,8 @@ info_logger.setLevel(logging.DEBUG)
 def movingAve(col,n):
     return (sum(col[-n:]) / float(n))
 
-
 class serialProtDenver(LineReceiver):
+    """Denver Instruments serial protocol"""
     def __init__(self, bal):
         self.bal = bal
         #LineReceiver.__init__(self)
@@ -61,22 +59,6 @@ class serialProtDenver(LineReceiver):
         else:
             info_logger.warning("BAD LINE: %s" % line)
 
-
-#     def lineReceived(self, line):
-#         """Should be either a balance value or a time, Values in format: "1 +
-#         0.0000\r\n", time in format: "09:10:37\r\n" """
-
-#         if line[2] == ":" :
-#             self.bal.timeReceived(line)
-#         elif  line [2] == "+" or line[2] == "-" :
-#             c,sign,v = line.split()
-#             val = float(v)
-#             if sign=="-" :  val = 0- val
-#             self.bal.valueReceived(val)
-#         else:
-#             info_handler.warning("BAD LINE: %s" % line)
-              
-        
 
 class inputProtocol(LineReceiver):
     delimiter = '\n' # unix terminal style newlines. remove this line
@@ -116,10 +98,10 @@ class Balance():
         self.flowInterval = flowInterval
         
 
-
     def startReceiving(self, port = comport):
         info_logger.info("Starting receiving")
-        info_logger.info("Interval = %f, flow interval = %f, runninge Ave n = %f" % (self.interval, self.flowInterval, self.runningAverageN))
+        info_logger.info("Interval = %f, flow interval = %f, runninge Ave n = %f" % 
+                         (self.interval, self.flowInterval, self.runningAverageN))
         self.ser = SerialPort(self.prot,port,reactor,baudrate=baud) 
         self.prot.sendLine("SET SE OFF") # turn off echo
         self.printInterval = LoopingCall(self.printVal)
@@ -219,20 +201,8 @@ def main():
 
         bal = Balance(options.interval, options.flowInterval, options.averageN)      
         bal.startReceiving()
-        termio = stdio.StandardIO(inputProtocol(bal))
+        stdio.StandardIO(inputProtocol(bal))
         reactor.run()
-        
-
-
-
-        
-        
-
-
-        
-
-            
-            
         
 
 
