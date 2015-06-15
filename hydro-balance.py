@@ -60,6 +60,26 @@ class serialProtDenver(LineReceiver):
             info_logger.warning("BAD LINE: %s" % line)
 
 
+class serialProtMetler(LineReceiver):
+    """Metler serial protocol"""
+    def __init__(self, bal):
+        self.bal = bal
+        #LineReceiver.__init__(self)
+
+    def lineReceived(self, line):
+        #print("LINE:" + line)
+        (ID, Status, WeightValue, Unit) = line.split()
+
+        try:
+          v = WeightValue.strip()
+          val = float(v)
+          if Unit == "g" :
+              val = val*1000 # get in mg
+          self.bal.valueReceived(val)
+        except:
+          info_logger.warning("BAD LINE: %s" % line)  
+       
+
 class inputProtocol(LineReceiver):
     delimiter = '\n' # unix terminal style newlines. remove this line
                      # for use with Telnet
@@ -73,7 +93,8 @@ class inputProtocol(LineReceiver):
     def lineReceived(self, line):
         # blank lines means log current values
         if not line:
-            self.bal.logValue()
+            print("Empty Line")
+            #self.bal.logValue()
         else :
 #            self.bal.stopReceiving()
 #            print menu
@@ -88,7 +109,7 @@ class inputProtocol(LineReceiver):
 class Balance():
 
     def __init__(self, interval, flowInterval, runningAverageN):
-        self.prot = serialProtDenver(self)
+        self.prot = serialProtMetler(self)
         self.values = [0,]
         self.times = [0,]
         self.flows = [0,]
@@ -103,7 +124,7 @@ class Balance():
         info_logger.info("Interval = %f, flow interval = %f, runninge Ave n = %f" % 
                          (self.interval, self.flowInterval, self.runningAverageN))
         self.ser = SerialPort(self.prot,port,reactor,baudrate=baud) 
-        self.prot.sendLine("SET SE OFF") # turn off echo
+        #self.prot.sendLine("SET SE OFF") # turn off echo
         self.printInterval = LoopingCall(self.printVal)
         self.printInterval.start(self.interval)     
         
@@ -111,7 +132,7 @@ class Balance():
         self.prot.stopProducing()
 
     def printVal(self):
-        self.prot.sendLine("DO PR")
+        self.prot.sendLine("SI")
         
     def valueReceived(self,val):
         ctime = time.time()
