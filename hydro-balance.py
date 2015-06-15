@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 # balance.py
 """
-Communicate with Denver Instruments balance
+Communicate with analytical balance and print running average of flow rates
+
+Currently supports Denver Instruments balance and Metler balance
 """
 
-__version__ = "1.4"
+__version__ = "1.5"
 
 import sys, time
 import logging, logging.handlers
@@ -39,7 +41,7 @@ class serialProtDenver(LineReceiver):
     """Denver Instruments serial protocol"""
     def __init__(self, bal):
         self.bal = bal
-        #LineReceiver.__init__(self)
+        self.sendLine("SET SE OFF") # turn off echo for Denver balance
 
     def lineReceived(self, line):
         """Should be either a balance value or a time, Values in format: "1 +
@@ -60,8 +62,17 @@ class serialProtDenver(LineReceiver):
             info_logger.warning("BAD LINE: %s" % line)
 
 
+    def sendWeightRequest(self):
+        self.sendLine("DO PR") # Denver just prints out what is on screen, so
+                               # units must be set on the balance itself
+
 class serialProtMetler(LineReceiver):
-    """Metler serial protocol"""
+    """Metler Toledo serial protocol (MT-SICS).
+
+Weight Line in form: 'ID Status WeightValue Unit'
+
+TODO: handle error and other line output forms
+"""
     def __init__(self, bal):
         self.bal = bal
         #LineReceiver.__init__(self)
@@ -71,45 +82,41 @@ class serialProtMetler(LineReceiver):
         (ID, Status, WeightValue, Unit) = line.split()
 
         try:
-          v = WeightValue.strip()
-          val = float(v)
-          if Unit == "g" :
-              val = val*1000 # get in mg
-          self.bal.valueReceived(val)
+            #v = WeightValue.strip()
+            val = float(WeightValue)
+            if Unit == "g" :
+                val = val*1000 # get in mg
+            self.bal.valueReceived(val)
         except:
-          info_logger.warning("BAD LINE: %s" % line)  
-       
+            info_logger.warning("BAD LINE: %s" % line)
 
-class inputProtocol(LineReceiver):
+    def sendWeightRequest(self):
+        self.sendLine("SI") # Metler appears to always report mass in g
+
+class KeyboardInput(LineReceiver):
     delimiter = '\n' # unix terminal style newlines. remove this line
                      # for use with Telnet
     def __init__(self,bal):
-            self.bal = bal
+        self.bal = bal
         #LineReceiver.__init__()
         
     def connectionMade(self):
         info_logger.debug("balance control")
 
     def lineReceived(self, line):
-        # blank lines means log current values
-        if not line:
-            print("Empty Line")
-            #self.bal.logValue()
-        else :
-#            self.bal.stopReceiving()
-#            print menu
+        """Keyboard commands"""
+        if line:
             if line == "q" : reactor.stop()
             elif line == "c" : self.bal.startReceiving()
-            # elif line == "a" : self.bal.averageN = get_num()
-            # elif line == "i" : self.bal.interval = get_num()
-#            else: print menu
 
+class HydroFlow():
+    """Class to handle main program flow. Keyboard input, balance input, and flow
+calculations.
 
+    """
 
-class Balance():
-
-    def __init__(self, interval, flowInterval, runningAverageN):
-        self.prot = serialProtMetler(self)
+    def __init__(self, serialProtocolType, interval, flowInterval, runningAverageN):
+        self.prot = serialProtocolType(self)
         self.values = [0,]
         self.times = [0,]
         self.flows = [0,]
@@ -117,23 +124,21 @@ class Balance():
         self.runningAverageN = runningAverageN
         self.interval = interval
         self.flowInterval = flowInterval
-        
 
     def startReceiving(self, port = comport):
         info_logger.info("Starting receiving")
         info_logger.info("Interval = %f, flow interval = %f, runninge Ave n = %f" % 
                          (self.interval, self.flowInterval, self.runningAverageN))
-        self.ser = SerialPort(self.prot,port,reactor,baudrate=baud) 
-        #self.prot.sendLine("SET SE OFF") # turn off echo
-        self.printInterval = LoopingCall(self.printVal)
+        self.ser = SerialPort(self.prot, port, reactor, baudrate=baud) 
+        self.printInterval = LoopingCall(self.getWeight)
         self.printInterval.start(self.interval)     
         
     def stopReceiving(self):
         self.prot.stopProducing()
 
-    def printVal(self):
-        self.prot.sendLine("SI")
-        
+    def getWeight(self):
+        self.prot.sendWeightRequest()
+
     def valueReceived(self,val):
         ctime = time.time()
         self.flows.append( (val-self.values[-1]) / (ctime - self.times[-1]))
@@ -144,89 +149,49 @@ class Balance():
         n = min(len(self.aveFlows), self.runningAverageN)
         #print val
         info_logger.info( "%.10f\t%.10f\t%.10f\t%.10f" % (self.values[-1], self.flows[-1], self.aveFlows[-1], movingAve(self.aveFlows, n )))
-        
-    # def logValue(self):
-    #     info_logger.info("Logged value")
-    #     balance_logger.info( "%f\t%f\t%f" % (self.values[-1], self.flows[-1], (self.values[-1] - self.values[-runningAverageN]) / (self.times[-1] - self.times[-runningAverageN])))
-
-        
-    # def tare(self):
-    #     self.ser.write("T\n")
-#        self.ser.readline() # eat the response
-
-    
- #   def set_time(self):
- #       self.ser.write("SET TT %s\n" % time.strftime("%H:%m:%s"))
- #       self.ser.readline() # throw away
 
 
-
-
-
-
-# def set_logfile():
-#     try:
-#         logfilename = input( "Enter log file name: ")
-#         lfile = open(logfilename,'a')
-#         LOGFILE = lfile
-#     except :
-#         print "error opening file"
-    
-
-def get_num():
-    try:
-        newtime = int(input("Enter number: "))
-        return newtime
-    except :
-        print "Error reading number"
-    return 1
-
-
-   
 def main():
-	"""Command-line tool.  See balance.py -h for help.
-	"""
+    """Command-line tool.  See balance.py -h for help.
+    """
 
-	#set default input and output
-	# input = sys.stdin
-	# output = sys.stdout
+    from optparse import OptionParser
 	
-	from optparse import OptionParser
-	
-	usage = """
-	usage: %prog [options]
-	"""
+    usage = """
+    usage: %prog [options]
+    """
 
-	parser = OptionParser(usage=usage, version ="%prog " + __version__)
-	# parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
-	# 				  help="Print INFO messages to stdout, default=%default")
-	parser.add_option("-i", "--interval", type="int", dest="interval", default=5,
-					  help="Set measurement interval for flow calculation, default=%default")
-	parser.add_option("-f", "--flowinterval", type="int", dest="flowInterval", default=6,
-					  help="Set measurement interval for flow calculation, default=%default")
-	parser.add_option("-a", "--average", type="int", dest="averageN", default=4,
-					  help="Set number of measurements for running average calculation, default=%default")
-
+    parser = OptionParser(usage=usage, version ="%prog " + __version__)
+    # parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
+    # 				  help="Print INFO messages to stdout, default=%default")
+    parser.add_option("-i", "--interval", type="int", dest="interval", default=5,
+                      help="Set measurement interval for flow calculation, default=%default")
+    parser.add_option("-f", "--flowinterval", type="int", dest="flowInterval", default=6,
+                      help="Set measurement interval for flow calculation, default=%default")
+    parser.add_option("-a", "--average", type="int", dest="averageN", default=4,
+                      help="Set number of measurements for running average calculation, default=%default")
+    parser.add_option("-b", "--balance", type="string", dest="model", default="Metler",
+					  help="Set balance model. ('Metler' or 'Denver'), default=%default")
                                           
 
-      	(options, args) = parser.parse_args()
-	# if options.verbose:
-	# 	balance_logger.setLevel(logging.INFO)
+    (options, args) = parser.parse_args()
+
+    info_logger.debug("Starting program")
 
 
+    if options.model == "Metler" :
+        serialProtType = serialProtMetler
+    elif options.model == "Denver" :
+        serialProtType = serialProtDenver
+    else :
+        info_logger.error("Unknown balance model: %s" % options.model)
 
-        #bal = SimBalance()  # to simulate
-        #ser = serial.Serial(comport, baud, timeout=1)
-
-        info_logger.debug("Starting program")
-
-        bal = Balance(options.interval, options.flowInterval, options.averageN)      
-        bal.startReceiving()
-        stdio.StandardIO(inputProtocol(bal))
-        reactor.run()
+    theHydroFlow = HydroFlow(serialProtType, options.interval, 
+                             options.flowInterval, options.averageN)
+    theHydroFlow.startReceiving()
+    stdio.StandardIO(KeyboardInput(theHydroFlow))
+    reactor.run()
         
-
-
 if __name__=="__main__":
     main()
     
