@@ -127,8 +127,8 @@ calculations.
 
     def startReceiving(self, port = comport):
         info_logger.info("Starting receiving")
-        info_logger.info("Interval = %f, flow interval = %f, runninge Ave n = %f" % 
-                         (self.interval, self.flowInterval, self.runningAverageN))
+        info_logger.info("Print Interval = %d\nFlow interval = %d * %d = %d s\nrunninge Ave n = %d" % 
+                         (self.interval, self.interval, self.flowInterval, self.interval*self.flowInterval, self.runningAverageN))
         self.ser = SerialPort(self.prot, port, reactor, baudrate=baud) 
         self.printInterval = LoopingCall(self.getWeight)
         self.printInterval.start(self.interval)     
