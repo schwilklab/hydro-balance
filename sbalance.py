@@ -22,10 +22,10 @@ from ConfigParser import SafeConfigParser
 config = SafeConfigParser()
 # defaults:
 config.add_section('main')
+config.set('main', 'mode', 'hydro')
+config.set('main', 'model', 'Metler')
 config.set('main', 'comport', '/dev/ttyS0')
 config.set('main', 'baud', '9600')
-config.set('main', 'model', 'Metler')
-config.set('main', 'mode', 'hydro')
 config.set('main', 'update_interval', '5')
 
 config.add_section('hydro')
