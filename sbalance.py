@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# sbalance.py
+# balance.py
 """
 Communicate with analytical balance and print running average of flow rates
 
